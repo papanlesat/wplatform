@@ -325,9 +325,9 @@ func TestUserRepository_Mock(t *testing.T) {
 	hashedPassword, _ := HashPassword("password123")
 
 	t.Run("Create user", func(t *testing.T) {
-		mock.ExpectQuery(`INSERT INTO users`).
+		mock.ExpectExec(`INSERT INTO users`).
 			WithArgs(sqlmock.AnyArg(), email, sqlmock.AnyArg(), "user").
-			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(userID))
+			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		user := &models.User{
 			ID:           userID,
