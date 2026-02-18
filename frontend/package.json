@@ -14,7 +14,8 @@
     "react-dom": "^18",
     "axios": "^1.6.2",
     "zustand": "^4.4.7",
-    "date-fns": "^2.30.0"
+    "date-fns": "^2.30.0",
+    "recharts": "^2.10.3"
   },
   "devDependencies": {
     "typescript": "^5",

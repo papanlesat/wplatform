@@ -107,6 +107,9 @@ func main() {
 	monitorService := monitor.NewMonitorService(dockerClient, containerManager)
 	monitorHandler := monitor.NewMonitorHandler(monitorService)
 
+	// Initialize domain handler
+	domainHandler := domain.NewDomainHandler(domainValidator)
+
 	// Setup router
 	router := mux.NewRouter()
 
@@ -121,6 +124,7 @@ func main() {
 	sslHandler.RegisterRoutes(apiRouter)
 	backupHandler.RegisterRoutes(apiRouter)
 	monitorHandler.RegisterRoutes(apiRouter)
+	domainHandler.RegisterRoutes(apiRouter)
 
 	// CORS middleware (for development)
 	router.Use(func(next http.Handler) http.Handler {

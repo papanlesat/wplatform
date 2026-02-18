@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { projectApi, backupApi, monitorApi } from '@/lib/api';
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+import { projectApi, backupApi, monitorApi, envVarApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
-import { Project, Backup, ProjectStats } from '@/types';
+import { Project, Backup, ProjectStats, EnvironmentVariable } from '@/types';
 
 export default function ProjectDetailPage() {
   const router = useRouter();
@@ -17,9 +18,14 @@ export default function ProjectDetailPage() {
   const [backups, setBackups] = useState<Backup[]>([]);
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [logs, setLogs] = useState('');
+  const [envVars, setEnvVars] = useState<EnvironmentVariable[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [newEnvKey, setNewEnvKey] = useState('');
+  const [newEnvValue, setNewEnvValue] = useState('');
+  const [editingEnv, setEditingEnv] = useState<EnvironmentVariable | null>(null);
+  const [showAddEnv, setShowAddEnv] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -39,14 +45,16 @@ export default function ProjectDetailPage() {
 
   const loadProject = async () => {
     try {
-      const [projectData, backupsData, statsData] = await Promise.all([
+      const [projectData, backupsData, statsData, envVarsData] = await Promise.all([
         projectApi.get(projectId),
         backupApi.list(projectId),
         monitorApi.getStats(projectId).catch(() => null),
+        envVarApi.list(projectId).catch(() => []),
       ]);
       setProject(projectData);
       setBackups(backupsData);
       setStats(statsData);
+      setEnvVars(envVarsData);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load project');
     } finally {
@@ -129,6 +137,63 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const loadEnvVars = async () => {
+    try {
+      const data = await envVarApi.list(projectId);
+      setEnvVars(data);
+    } catch (err: any) {
+      console.error('Failed to load env vars:', err);
+    }
+  };
+
+  const handleAddEnvVar = async () => {
+    if (!newEnvKey.trim() || !newEnvValue.trim()) {
+      alert('Please enter both key and value');
+      return;
+    }
+    try {
+      await envVarApi.create(projectId, newEnvKey, newEnvValue);
+      setNewEnvKey('');
+      setNewEnvValue('');
+      setShowAddEnv(false);
+      loadEnvVars();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to add environment variable');
+    }
+  };
+
+  const handleUpdateEnvVar = async () => {
+    if (!editingEnv) return;
+    try {
+      await envVarApi.update(editingEnv.id, editingEnv.key, editingEnv.value);
+      setEditingEnv(null);
+      loadEnvVars();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to update environment variable');
+    }
+  };
+
+  const handleDeleteEnvVar = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this environment variable?')) return;
+    try {
+      await envVarApi.delete(id);
+      loadEnvVars();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to delete environment variable');
+    }
+  };
+
+  const handleGenerateSalts = async () => {
+    if (!confirm('This will regenerate all WordPress salts and may log out all users. Continue?')) return;
+    try {
+      await envVarApi.generateSalts(projectId);
+      loadEnvVars();
+      alert('WordPress salts regenerated successfully');
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to generate salts');
+    }
+  };
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -188,12 +253,13 @@ export default function ProjectDetailPage() {
           </div>
 
           <div className="flex space-x-4 mb-6 border-b">
-            {['overview', 'logs', 'backups', 'stats'].map((tab) => (
+            {['overview', 'logs', 'backups', 'stats', 'settings'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => {
                   setActiveTab(tab);
                   if (tab === 'logs') loadLogs();
+                  if (tab === 'settings') loadEnvVars();
                 }}
                 className={`px-4 py-2 text-sm font-medium ${activeTab === tab ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}
               >
@@ -281,24 +347,248 @@ export default function ProjectDetailPage() {
             {activeTab === 'stats' && stats && (
               <div className="space-y-6">
                 <h3 className="font-medium">Container Stats</h3>
+                
+                <div className="bg-gray-50 p-4 rounded">
+                  <h4 className="font-medium mb-4">CPU Usage</h4>
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[
+                        { name: 'WordPress', cpu: stats.wordpress_stats?.cpu_percentage || 0 },
+                        { name: 'MySQL', cpu: stats.mysql_stats?.cpu_percentage || 0 },
+                      ]}>
+                        <XAxis dataKey="name" />
+                        <YAxis unit="%" domain={[0, 100]} />
+                        <Tooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
+                        <Bar dataKey="cpu" fill="#3b82f6" name="CPU %" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-6">
                   {stats.wordpress_stats && (
                     <div className="bg-gray-50 p-4 rounded">
-                      <h4 className="font-medium mb-2">WordPress</h4>
-                      <p className="text-sm">CPU: {stats.wordpress_stats.cpu_percentage.toFixed(2)}%</p>
-                      <p className="text-sm">Memory: {formatBytes(stats.wordpress_stats.memory_usage)} / {formatBytes(stats.wordpress_stats.memory_limit)}</p>
-                      <p className="text-sm">Network: ↓ {formatBytes(stats.wordpress_stats.network_rx)} / ↑ {formatBytes(stats.wordpress_stats.network_tx)}</p>
+                      <h4 className="font-medium mb-2">WordPress Memory</h4>
+                      <div className="h-40">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={[
+                                { name: 'Used', value: stats.wordpress_stats.memory_usage },
+                                { name: 'Free', value: stats.wordpress_stats.memory_limit - stats.wordpress_stats.memory_usage },
+                              ]}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={40}
+                              outerRadius={60}
+                              dataKey="value"
+                              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            >
+                              <Cell fill="#ef4444" />
+                              <Cell fill="#e5e7eb" />
+                            </Pie>
+                            <Tooltip formatter={(value: number) => formatBytes(value)} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <p className="text-sm text-center text-gray-500 mt-2">
+                        {formatBytes(stats.wordpress_stats.memory_usage)} / {formatBytes(stats.wordpress_stats.memory_limit)}
+                      </p>
                     </div>
                   )}
                   {stats.mysql_stats && (
                     <div className="bg-gray-50 p-4 rounded">
-                      <h4 className="font-medium mb-2">MySQL</h4>
-                      <p className="text-sm">CPU: {stats.mysql_stats.cpu_percentage.toFixed(2)}%</p>
-                      <p className="text-sm">Memory: {formatBytes(stats.mysql_stats.memory_usage)} / {formatBytes(stats.mysql_stats.memory_limit)}</p>
-                      <p className="text-sm">Network: ↓ {formatBytes(stats.mysql_stats.network_rx)} / ↑ {formatBytes(stats.mysql_stats.network_tx)}</p>
+                      <h4 className="font-medium mb-2">MySQL Memory</h4>
+                      <div className="h-40">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={[
+                                { name: 'Used', value: stats.mysql_stats.memory_usage },
+                                { name: 'Free', value: stats.mysql_stats.memory_limit - stats.mysql_stats.memory_usage },
+                              ]}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={40}
+                              outerRadius={60}
+                              dataKey="value"
+                              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            >
+                              <Cell fill="#f59e0b" />
+                              <Cell fill="#e5e7eb" />
+                            </Pie>
+                            <Tooltip formatter={(value: number) => formatBytes(value)} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <p className="text-sm text-center text-gray-500 mt-2">
+                        {formatBytes(stats.mysql_stats.memory_usage)} / {formatBytes(stats.mysql_stats.memory_limit)}
+                      </p>
                     </div>
                   )}
                 </div>
+
+                <div className="bg-gray-50 p-4 rounded">
+                  <h4 className="font-medium mb-4">Network I/O</h4>
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[
+                        { 
+                          name: 'WordPress', 
+                          'Download': stats.wordpress_stats?.network_rx || 0,
+                          'Upload': stats.wordpress_stats?.network_tx || 0,
+                        },
+                        { 
+                          name: 'MySQL', 
+                          'Download': stats.mysql_stats?.network_rx || 0,
+                          'Upload': stats.mysql_stats?.network_tx || 0,
+                        },
+                      ]}>
+                        <XAxis dataKey="name" />
+                        <YAxis tickFormatter={(value) => formatBytes(value)} />
+                        <Tooltip formatter={(value: number) => formatBytes(value)} />
+                        <Legend />
+                        <Bar dataKey="Download" fill="#22c55e" />
+                        <Bar dataKey="Upload" fill="#3b82f6" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {stats.disk_usage && (
+                  <div className="bg-gray-50 p-4 rounded">
+                    <h4 className="font-medium mb-2">Disk Usage</h4>
+                    <div className="h-40">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'Used', value: stats.disk_usage.usage_bytes },
+                              { name: 'Free', value: stats.disk_usage.total_bytes - stats.disk_usage.usage_bytes },
+                            ]}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={70}
+                            dataKey="value"
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          >
+                            <Cell fill="#8b5cf6" />
+                            <Cell fill="#e5e7eb" />
+                          </Pie>
+                          <Tooltip formatter={(value: number) => formatBytes(value)} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <p className="text-sm text-center text-gray-500 mt-2">
+                      {formatBytes(stats.disk_usage.usage_bytes)} / {formatBytes(stats.disk_usage.total_bytes)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'stats' && !stats && (
+              <div className="text-center py-8 text-gray-500">
+                No stats available. Make sure the project is running.
+              </div>
+            )}
+
+            {activeTab === 'settings' && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-medium">Environment Variables</h3>
+                  <div className="space-x-2">
+                    <button onClick={handleGenerateSalts} className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700">
+                      Generate WP Salts
+                    </button>
+                    <button onClick={() => setShowAddEnv(true)} className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                      Add Variable
+                    </button>
+                  </div>
+                </div>
+
+                {showAddEnv && (
+                  <div className="bg-gray-50 p-4 rounded space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <input
+                        type="text"
+                        placeholder="Key (e.g., WP_MEMORY_LIMIT)"
+                        value={newEnvKey}
+                        onChange={(e) => setNewEnvKey(e.target.value)}
+                        className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Value (e.g., 256M)"
+                        value={newEnvValue}
+                        onChange={(e) => setNewEnvValue(e.target.value)}
+                        className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex space-x-2">
+                      <button onClick={handleAddEnvVar} className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">
+                        Save
+                      </button>
+                      <button onClick={() => { setShowAddEnv(false); setNewEnvKey(''); setNewEnvValue(''); }} className="px-3 py-1 bg-gray-300 text-gray-700 rounded text-sm hover:bg-gray-400">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {envVars.length === 0 ? (
+                  <p className="text-gray-500 py-4">No environment variables configured</p>
+                ) : (
+                  <div className="space-y-2">
+                    {envVars.map((envVar) => (
+                      <div key={envVar.id} className="flex justify-between items-center p-4 bg-gray-50 rounded">
+                        {editingEnv?.id === envVar.id ? (
+                          <div className="flex-1 grid grid-cols-2 gap-4">
+                            <input
+                              type="text"
+                              value={editingEnv.key}
+                              onChange={(e) => setEditingEnv({ ...editingEnv, key: e.target.value })}
+                              className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <input
+                              type="text"
+                              value={editingEnv.value}
+                              onChange={(e) => setEditingEnv({ ...editingEnv, value: e.target.value })}
+                              className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex-1">
+                            <p className="font-mono text-sm font-medium text-gray-900">{envVar.key}</p>
+                            <p className="font-mono text-sm text-gray-500 truncate max-w-md">{envVar.value}</p>
+                          </div>
+                        )}
+                        <div className="space-x-2">
+                          {editingEnv?.id === envVar.id ? (
+                            <>
+                              <button onClick={handleUpdateEnvVar} className="px-3 py-1 bg-green-600 text-white rounded text-sm">
+                                Save
+                              </button>
+                              <button onClick={() => setEditingEnv(null)} className="px-3 py-1 bg-gray-300 text-gray-700 rounded text-sm">
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => setEditingEnv(envVar)} className="px-3 py-1 bg-yellow-600 text-white rounded text-sm hover:bg-yellow-700">
+                                Edit
+                              </button>
+                              <button onClick={() => handleDeleteEnvVar(envVar.id)} className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700">
+                                Delete
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

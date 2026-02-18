@@ -135,22 +135,27 @@ export const monitorApi = {
 
 export const envVarApi = {
   list: async (projectId: string): Promise<EnvironmentVariable[]> => {
-    const response = await api.get(`/api/projects/${projectId}/env-vars`);
+    const response = await api.get(`/api/projects/${projectId}/envvars`);
     return response.data || [];
   },
 
   create: async (projectId: string, key: string, value: string): Promise<EnvironmentVariable> => {
-    const response = await api.post(`/api/projects/${projectId}/env-vars`, { key, value });
+    const response = await api.post(`/api/projects/${projectId}/envvars`, { key, value });
     return response.data;
   },
 
   update: async (id: string, key: string, value: string): Promise<EnvironmentVariable> => {
-    const response = await api.put(`/api/env-vars/${id}`, { key, value });
+    const response = await api.put(`/api/envvars/${id}`, { key, value });
     return response.data;
   },
 
   delete: async (id: string): Promise<void> => {
-    await api.delete(`/api/env-vars/${id}`);
+    await api.delete(`/api/envvars/${id}`);
+  },
+
+  generateSalts: async (projectId: string): Promise<Record<string, string>> => {
+    const response = await api.post(`/api/projects/${projectId}/envvars/generate-salts`);
+    return response.data;
   },
 };
 
