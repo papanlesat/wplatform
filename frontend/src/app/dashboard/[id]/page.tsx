@@ -4,9 +4,17 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
-import { projectApi, backupApi, monitorApi, envVarApi } from '@/lib/api';
+import { projectApi, backupApi, monitorApi, envVarApi, dnsApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { Project, Backup, ProjectStats, EnvironmentVariable } from '@/types';
+
+interface DNSCheckResult {
+  domain: string;
+  server_ip: string;
+  resolved_ips: string[];
+  propagated: boolean;
+  message: string;
+}
 
 export default function ProjectDetailPage() {
   const router = useRouter();
@@ -19,6 +27,8 @@ export default function ProjectDetailPage() {
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [logs, setLogs] = useState('');
   const [envVars, setEnvVars] = useState<EnvironmentVariable[]>([]);
+  const [dnsResult, setDnsResult] = useState<DNSCheckResult | null>(null);
+  const [dnsChecking, setDnsChecking] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -194,6 +204,26 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleCheckDNS = async () => {
+    if (!project) return;
+    setDnsChecking(true);
+    setDnsResult(null);
+    try {
+      const result = await dnsApi.checkProjectDNS(projectId, project.domain);
+      setDnsResult(result);
+    } catch (err: any) {
+      setDnsResult({
+        domain: project.domain,
+        server_ip: 'unknown',
+        resolved_ips: [],
+        propagated: false,
+        message: err.response?.data?.error || 'Failed to check DNS',
+      });
+    } finally {
+      setDnsChecking(false);
+    }
+  };
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -280,6 +310,31 @@ export default function ProjectDetailPage() {
                     <h3 className="text-sm font-medium text-gray-500">Memory Limit</h3>
                     <p className="mt-1 text-lg">{project.memory_limit_mb} MB</p>
                   </div>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-medium">DNS Configuration</h3>
+                    <button 
+                      onClick={handleCheckDNS} 
+                      disabled={dnsChecking}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {dnsChecking ? 'Checking...' : 'Check DNS'}
+                    </button>
+                  </div>
+                  {dnsResult ? (
+                    <div className={`p-3 rounded ${dnsResult.propagated ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                      <p className="font-medium">{dnsResult.propagated ? '✓ DNS Propagated' : '⏳ DNS Not Propagated'}</p>
+                      <p className="text-sm mt-1">{dnsResult.message}</p>
+                      <p className="text-sm mt-1">Server IP: {dnsResult.server_ip}</p>
+                      {dnsResult.resolved_ips.length > 0 && (
+                        <p className="text-sm">Resolved IPs: {dnsResult.resolved_ips.join(', ')}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm">Click "Check DNS" to verify your domain's DNS configuration</p>
+                  )}
                 </div>
 
                 <div className="flex space-x-3 pt-4">

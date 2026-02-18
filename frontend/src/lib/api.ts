@@ -133,6 +133,29 @@ export const monitorApi = {
   },
 };
 
+export const dnsApi = {
+  checkDNS: async (domain: string): Promise<{
+    domain: string;
+    server_ip: string;
+    resolved_ips: string[];
+    propagated: boolean;
+    message: string;
+  }> => {
+    const response = await api.post('/api/dns/check', { domain });
+    return response.data;
+  },
+  checkProjectDNS: async (projectId: string, domain: string): Promise<{
+    domain: string;
+    server_ip: string;
+    resolved_ips: string[];
+    propagated: boolean;
+    message: string;
+  }> => {
+    const response = await api.get(`/api/projects/${projectId}/dns/check?domain=${encodeURIComponent(domain)}`);
+    return response.data;
+  },
+};
+
 export const envVarApi = {
   list: async (projectId: string): Promise<EnvironmentVariable[]> => {
     const response = await api.get(`/api/projects/${projectId}/envvars`);
