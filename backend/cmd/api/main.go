@@ -1,3 +1,26 @@
+// Package main WordPress Docker Platform API
+//
+//	Schemes: http, https
+//	Host: localhost:8080
+//	BasePath: /
+//	Version: 1.0
+//
+//	Consumes:
+//	- application/json
+//
+//	Produces:
+//	- application/json
+//
+//	SecurityDefinitions:
+//	  Bearer:
+//	    type: apiKey
+//	    name: Authorization
+//	    in: header
+//
+//	Security:
+//	  Bearer: []
+//
+// swagger:meta
 package main
 
 import (
@@ -9,7 +32,10 @@ import (
 	"syscall"
 	"time"
 
+	_ "wplatform/backend/docs"
+
 	"github.com/gorilla/mux"
+	httpSwagger "github.com/swaggo/http-swagger"
 
 	"wplatform/backend/internal/auth"
 	"wplatform/backend/internal/backup"
@@ -146,6 +172,9 @@ func main() {
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("OK"))
 	}).Methods("GET")
+
+	// Swagger documentation endpoint
+	router.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
 
 	// Start server
 	srv := &http.Server{
