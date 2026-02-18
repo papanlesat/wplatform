@@ -59,23 +59,151 @@ A SaaS platform that enables users to deploy and manage WordPress websites with 
 ## Getting Started
 
 ### Prerequisites
-- Docker and Docker Compose
+- Docker and Docker Compose v2+
 - Go 1.21+
 - Node.js 20+
 - PostgreSQL 14+
+- A VPS with a public IP address
+- Domain names pointing to your server's IP
 
-### Quick Start
+### Environment Setup
 
-1. Clone and configure environment
-2. Start Traefik reverse proxy
-3. Run backend API
-4. Run Next.js frontend
+1. Copy the example environment file:
+```bash
+cp .env.example .env
+```
 
-See individual README files in `backend/` and `frontend/` for detailed instructions.
+2. Configure the required environment variables:
+```env
+# Server configuration
+SERVER_PORT=8080
+SERVER_IP=your.server.ip.address
 
-## API Documentation
+# Database
+DATABASE_URL=postgres://user:password@localhost:5432/wplatform?sslmode=disable
 
-API documentation will be available at `/api/docs` when the backend is running.
+# JWT
+JWT_SECRET=your-super-secret-key-change-in-production
+JWT_EXPIRATION=24h
+
+# Traefik / SSL
+TRAEFIK_EMAIL=admin@example.com
+CLOUDFLARE_API_TOKEN=optional-cloudflare-token
+CLOUDFLARE_EMAIL=optional-cloudflare-email
+
+# Backup
+BACKUP_BASE_PATH=/var/backups/wordpress
+
+# WordPress
+WORDPRESS_IMAGE=wordpress:latest
+```
+
+### Deployment with Docker Compose
+
+1. Create the Docker network for public access:
+```bash
+docker network create wp-public
+```
+
+2. Start the infrastructure:
+```bash
+docker-compose up -d traefik postgres
+```
+
+3. Set up the PostgreSQL database:
+```bash
+# Connect to PostgreSQL and create the database and user
+docker exec -it wpplatform-postgres psql -U postgres
+```
+```sql
+CREATE DATABASE wplatform;
+CREATE USER wplatform WITH ENCRYPTED PASSWORD 'your-password';
+GRANT ALL PRIVILEGES ON DATABASE wplatform TO wplatform;
+\q
+```
+
+4. Run database migrations (the app will auto-migrate on startup)
+
+5. Start the backend service:
+```bash
+docker-compose up -d backend
+```
+
+6. Start the frontend service:
+```bash
+docker-compose up -d frontend
+```
+
+### Development Setup
+
+**Backend:**
+```bash
+cd backend
+go mod download
+go run cmd/api/main.go
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### API Documentation
+
+API documentation is available at `/swagger/index.html` when the backend is running.
+
+### Creating Your First Admin User
+
+Use the registration endpoint or direct database insertion to create an admin user:
+
+```bash
+curl -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"your-password","role":"admin"}'
+```
+
+### Troubleshooting
+
+**Container fails to start:**
+- Check Docker logs: `docker logs <container-name>`
+- Verify the wp-public network exists: `docker network ls`
+- Ensure ports 80 and 443 are not in use by other services
+
+**SSL certificate issues:**
+- Verify DNS A record points to your server IP
+- Check Traefik logs: `docker logs traefik`
+- For Cloudflare, ensure API token has correct permissions
+
+**Database connection errors:**
+- Verify PostgreSQL is running: `docker ps`
+- Check connection string in .env
+- Ensure database and user exist
+
+### Scaling Considerations
+
+- Each WordPress site runs in its own container stack
+- Typical VPS can handle 10-20 WordPress sites
+- Monitor disk usage for backups
+- Consider offloading backups to S3-compatible storage
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/auth/register` | POST | Register new user |
+| `/auth/login` | POST | Login and get JWT |
+| `/api/projects` | GET | List all projects |
+| `/api/projects` | POST | Create new project |
+| `/api/projects/{id}` | GET | Get project details |
+| `/api/projects/{id}/start` | POST | Start project containers |
+| `/api/projects/{id}/stop` | POST | Stop project containers |
+| `/api/projects/{id}/logs` | GET | Get container logs |
+| `/api/projects/{id}/stats` | GET | Get resource stats |
+| `/api/projects/{id}/backups` | GET | List backups |
+| `/api/backups` | POST | Create backup |
+| `/api/dns/check` | POST | Check DNS propagation |
 
 ## License
 
